@@ -1,29 +1,24 @@
 (function() {
   'use strict';
 
-  // 1. Identify the script tag and its parameters
-  const scriptTag = document.currentScript || Array.from(document.getElementsByTagName('script')).find(s => s.src.includes('gh-loader.js'));
+  // 1. Get configuration from the Global Object or set defaults
+  const config = window.GHL_CONFIG || {};
   
-  if (!scriptTag) {
-    console.error('[Loader] Could not find own script tag to read parameters.');
+  const REPO_OWNER = config.owner;
+  const REPO_NAME = config.repo;
+  const FILE_NAME = config.file || 'main.js';
+  const BRANCH = config.branch || 'main'; // Defaulted to main if missing
+  
+  // Validation
+  if (!REPO_OWNER || !REPO_NAME) {
+    console.error('[Loader] Error: window.GHL_CONFIG.owner or .repo is missing.');
     return;
   }
 
-  // Get parameters from data attributes
-  const REPO_OWNER = scriptTag.getAttribute('data-owner');
-  const REPO_NAME = scriptTag.getAttribute('data-repo');
-  const FILE_NAME = scriptTag.getAttribute('data-file') || 'main.js';
-  const BRANCH = scriptTag.getAttribute('data-branch') || 'main';
-  
-  // Create unique storage keys based on repo/file to avoid collisions
+  // Create unique storage keys based on repo/file
   const STORAGE_KEY = `gh-cache-${REPO_OWNER}-${REPO_NAME}-${FILE_NAME}`;
   const VERSION_KEY = `${STORAGE_KEY}-version`;
   const CDN_URL = `https://cdn.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}/${FILE_NAME}`;
-
-  if (!REPO_OWNER || !REPO_NAME) {
-    console.error('[Loader] Missing data-owner or data-repo attributes.');
-    return;
-  }
 
   async function getLatestVersion() {
     try {
@@ -41,10 +36,12 @@
   async function fetchScriptCode(commitSha) {
     try {
       const commitCDNUrl = `https://cdn.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}@${commitSha}/${FILE_NAME}`;
-      const cacheBuster = '?v=' + commitSha + '&t=' + Date.now();
+      const cacheBuster = `?v=${commitSha}&t=${Date.now()}`;
       
       let response = await fetch(commitCDNUrl + cacheBuster);
+      
       if (!response.ok) {
+        // Fallback to GitHub API if CDN fails
         const apiUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${FILE_NAME}?ref=${commitSha}`;
         response = await fetch(apiUrl);
         if (response.ok) {
@@ -53,9 +50,10 @@
         }
       }
       
-      if (!response.ok) throw new Error(`Failed to fetch script: ${response.status}`);
+      if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
       return await response.text();
     } catch (error) {
+      console.error('[Loader] Fetch script error:', error);
       return null;
     }
   }
@@ -65,32 +63,33 @@
       const script = document.createElement('script');
       script.textContent = code;
       document.head.appendChild(script);
-      // We keep it in DOM if it contains global logic, 
-      // but remove it for clean-up if it's a self-invoking script
-      document.head.removeChild(script);
+      document.head.removeChild(script); // Remove tag after execution to keep DOM clean
     } catch (error) {
       console.error('[Loader] Execution failed:', error);
     }
   }
 
-  async function loadScript() {
+  async function load() {
     const storedCode = localStorage.getItem(STORAGE_KEY);
     const storedVersion = localStorage.getItem(VERSION_KEY);
 
+    // If we have a cached version, run it immediately for speed
     if (storedCode && storedVersion) {
       executeCode(storedCode);
       
+      // Then check for updates in the background
       getLatestVersion().then(async latestVersion => {
         if (latestVersion && latestVersion !== storedVersion) {
           const latestCode = await fetchScriptCode(latestVersion);
           if (latestCode) {
             localStorage.setItem(STORAGE_KEY, latestCode);
             localStorage.setItem(VERSION_KEY, latestVersion);
-            console.log(`[Loader] ${FILE_NAME} updated. Refresh to apply.`);
+            console.log(`[Loader] ${FILE_NAME} updated in cache. Will apply on next reload.`);
           }
         }
       });
     } else {
+      // First time loading: get latest, then execute
       const latestVersion = await getLatestVersion();
       if (latestVersion) {
         const latestCode = await fetchScriptCode(latestVersion);
@@ -103,9 +102,10 @@
     }
   }
 
+  // Start the process
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', loadScript);
+    document.addEventListener('DOMContentLoaded', load);
   } else {
-    loadScript();
+    load();
   }
 })();
