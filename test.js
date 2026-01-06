@@ -1,1 +1,1 @@
-console.log('custom script version 1');
+console.log('custom script version 2');
