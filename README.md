@@ -31,7 +31,7 @@ Add the following code to the **Head** section of your **Wix Custom Code** panel
     branch: 'main'          // (Optional) defaults to 'main'
   };
 </script>
-<script src="[https://cdn.jsdelivr.net/gh/moranfru/wix-custom-code-helper/loader.js](https://cdn.jsdelivr.net/gh/moranfru/wix-custom-code-helper/loader.js)"></script>
+<script src="https://cdn.jsdelivr.net/gh/moranfru/wix-custom-code-helper/loader.js"></script>
 ```
 ---
 
